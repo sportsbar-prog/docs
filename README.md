@@ -1,4 +1,4 @@
-# Asterisk ARI Production API Documentation
+# Kaphila API Production API Documentation
 
 > Version: 2.0.0  
 > Last updated: 2026-02-17  
@@ -9,14 +9,14 @@
 ## 1) Overview
 
 ### API Name
-**Asterisk ARI Production API**
+**Kaphila API Production API**
 
 ### Base URL
 `http://72.60.206.114:3000`
 
 ### Purpose
 This API lets you:
-- originate outbound calls via Asterisk ARI
+- originate outbound calls via Kaphila API
 - control live calls (hangup, TTS, playback, DTMF gather)
 - track active calls and recordings
 - receive call lifecycle webhooks
@@ -32,7 +32,7 @@ This API lets you:
 
 ### Prerequisites
 - Node.js >= 18
-- Asterisk with ARI enabled
+- Kaphila with API enabled
 - PostgreSQL with required tables (`api_keys`, `call_logs`, etc.)
 - `ffmpeg` available in PATH (for TTS conversion)
 
@@ -51,7 +51,7 @@ Example response:
 ```json
 {
   "status": "healthy",
-  "service": "Asterisk ARI Telephony API",
+  "service": "Kaphila API Telephony API",
   "version": "2.0.0",
   "timestamp": "2026-02-17T10:20:30.000Z",
   "stats": { "activeCalls": 0 },
@@ -150,7 +150,7 @@ Most errors follow:
 | 403 | Forbidden | Reserved for policy/permission denial (not consistently used in code) |
 | 404 | Not Found | Unknown call ID, recording, API key, file |
 | 429 | Too Many Requests | Rate limit exceeded |
-| 500 | Internal Server Error | ARI/db/file/system command failures |
+| 500 | Internal Server Error | API/db/file/system command failures |
 | 503 | Service Unavailable | No trunks assigned |
 
 ---
@@ -182,7 +182,7 @@ When `webhookUrl` is provided during call creation, the API sends POST events to
 ### Transport
 - Method: `POST`
 - Content-Type: `application/json`
-- User-Agent: `Asterisk-ARI-API/2.0`
+- User-Agent: `Kaphila-API-API/2.0`
 - Timeout: 5000ms
 
 ### Event types
@@ -241,7 +241,7 @@ When `webhookUrl` is provided during call creation, the API sends POST events to
 ```json
 {
   "status": "healthy",
-  "service": "Asterisk ARI Telephony API",
+  "service": "Kaphila API Telephony API",
   "version": "2.0.0",
   "timestamp": "2026-02-17T10:20:30.000Z",
   "stats": { "activeCalls": 2 },
@@ -261,7 +261,7 @@ curl -X GET "http://72.60.206.114:3000/health"
 ```
 
 **Notes & Edge Cases**
-- If ARI is disconnected, process may fail at startup rather than returning unhealthy status.
+- If API is disconnected, process may fail at startup rather than returning unhealthy status.
 
 ---
 
@@ -468,7 +468,7 @@ curl -X POST "http://72.60.206.114:3000/voice" \
 ```json
 {
   "callId": "string, required",
-  "file": "string, required, Asterisk sound name",
+  "file": "string, required, Kaphila sound name",
   "playTo": "bridge|channel, optional, default bridge"
 }
 ```
@@ -950,7 +950,7 @@ console.log(call.data);
 ```python
 import requests
 
-class AriApiClient:
+class APIApiClient:
     def __init__(self, base_url: str, token: str):
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
@@ -967,7 +967,7 @@ class AriApiClient:
         resp.raise_for_status()
         return resp.json()
 
-client = AriApiClient("http://72.60.206.114:3000", "ak_live_123")
+client = APIApiClient("http://72.60.206.114:3000", "ak_live_123")
 print(client.make_call("14155550100", "https://example.com/hooks/calls"))
 ```
 
@@ -975,13 +975,13 @@ print(client.make_call("14155550100", "https://example.com/hooks/calls"))
 
 ## 11) Best Practices & Security
 
-1. Store secrets in environment variables; never hardcode API keys.
+1. Store secrets in environment vAPIables; never hardcode API keys.
 2. Rotate API keys regularly.
 3. Validate phone numbers in E.164 format before submission.
 4. Enforce webhook signature verification on receiver side.
 5. Add idempotency keys for retried call creation requests.
 6. Monitor `402`, `429`, and call failure rates.
-7. Keep Asterisk, Node dependencies, and OS patched.
+7. Keep Kaphila, Node dependencies, and OS patched.
 
 ---
 
