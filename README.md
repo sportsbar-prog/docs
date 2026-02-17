@@ -971,11 +971,232 @@ client = APIApiClient("http://72.60.206.114:3000", "ak_live_123")
 print(client.make_call("14155550100", "https://example.com/hooks/calls"))
 ```
 
+### Flask (Python) — IVR + Voicemail Detection (AMD)
+
+This example does three things:
+1. Starts a call with `useAmd: true`
+2. Uses webhook `call.answered` AMD status to split HUMAN vs MACHINE
+3. Runs IVR (`/gather`) for humans and voicemail drop (`/voice`) for machines
+
+```python
+import os
+import requests
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+BASE_URL = os.getenv("KAPHILA_BASE_URL", "http://72.60.206.114:3000")
+API_KEY = os.getenv("KAPHILA_API_KEY", "ak_live_123")
+
+HEADERS = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json",
+}
+
+
+def post_api(path: str, payload: dict):
+    resp = requests.post(f"{BASE_URL}{path}", json=payload, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+@app.post("/start-call")
+def start_call():
+    body = request.get_json(force=True) or {}
+    number = body.get("number")
+    if not number:
+        return jsonify({"ok": False, "error": "number is required"}), 400
+
+    webhook_url = body.get("webhookUrl", "https://your-domain.com/webhooks/kaphila")
+
+    result = post_api("/makecall", {
+        "number": number,
+        "webhookUrl": webhook_url,
+        "useAmd": True,
+        "ringTimeout": 30,
+        "voiceName": "en-US-Neural2-A"
+    })
+    return jsonify({"ok": True, "call": result})
+
+
+@app.post("/webhooks/kaphila")
+def kaphila_webhook():
+    payload = request.get_json(force=True) or {}
+    event = payload.get("event")
+    call_id = payload.get("callId")
+
+    if not call_id:
+        return jsonify({"ok": True, "ignored": "missing callId"})
+
+    if event == "call.answered":
+        amd_status = ((payload.get("amd") or {}).get("status") or "UNKNOWN").upper()
+
+        if amd_status == "MACHINE":
+            post_api("/voice", {
+                "callId": call_id,
+                "playTo": "bridge",
+                "text": "Hello. This is a reminder call from Kaphila. Please call us back at 1-800-555-0100."
+            })
+        else:
+            post_api("/gather", {
+                "callId": call_id,
+                "playTo": "bridge",
+                "text": "Press 1 for sales, press 2 for support.",
+                "numDigits": 1,
+                "timeout": 10000
+            })
+
+    elif event == "gather.complete":
+        digits = str(payload.get("digits", ""))
+        if digits == "1":
+            post_api("/voice", {
+                "callId": call_id,
+                "playTo": "bridge",
+                "text": "Connecting you to sales shortly."
+            })
+        elif digits == "2":
+            post_api("/voice", {
+                "callId": call_id,
+                "playTo": "bridge",
+                "text": "Connecting you to support shortly."
+            })
+        else:
+            post_api("/voice", {
+                "callId": call_id,
+                "playTo": "bridge",
+                "text": "Invalid input. Goodbye."
+            })
+            post_api("/hangup", {"callId": call_id})
+
+    return jsonify({"ok": True})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+```
+
+### Node.js (Express) — IVR + Voicemail Detection (AMD)
+
+```js
+import express from "express";
+import axios from "axios";
+
+const app = express();
+app.use(express.json());
+
+const BASE_URL = process.env.KAPHILA_BASE_URL || "http://72.60.206.114:3000";
+const API_KEY = process.env.KAPHILA_API_KEY || "ak_live_123";
+
+const api = axios.create({
+  baseURL: BASE_URL,
+  headers: {
+    Authorization: `Bearer ${API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  timeout: 15000,
+});
+
+app.post("/start-call", async (req, res) => {
+  try {
+    const { number, webhookUrl } = req.body;
+    if (!number) return res.status(400).json({ ok: false, error: "number is required" });
+
+    const call = await api.post("/makecall", {
+      number,
+      webhookUrl: webhookUrl || "https://your-domain.com/webhooks/kaphila",
+      useAmd: true,
+      ringTimeout: 30,
+      voiceName: "en-US-Neural2-A",
+    });
+
+    return res.json({ ok: true, call: call.data });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/webhooks/kaphila", async (req, res) => {
+  const payload = req.body || {};
+  const event = payload.event;
+  const callId = payload.callId;
+
+  try {
+    if (!callId) return res.json({ ok: true, ignored: "missing callId" });
+
+    if (event === "call.answered") {
+      const amd = String(payload?.amd?.status || "UNKNOWN").toUpperCase();
+
+      if (amd === "MACHINE") {
+        await api.post("/voice", {
+          callId,
+          playTo: "bridge",
+          text: "Hello. This is a reminder call from Kaphila. Please call us back at 1-800-555-0100.",
+        });
+      } else {
+        await api.post("/gather", {
+          callId,
+          playTo: "bridge",
+          text: "Press 1 for sales, press 2 for support.",
+          numDigits: 1,
+          timeout: 10000,
+        });
+      }
+    }
+
+    if (event === "gather.complete") {
+      const digits = String(payload.digits || "");
+      if (digits === "1") {
+        await api.post("/voice", { callId, playTo: "bridge", text: "Connecting you to sales shortly." });
+      } else if (digits === "2") {
+        await api.post("/voice", { callId, playTo: "bridge", text: "Connecting you to support shortly." });
+      } else {
+        await api.post("/voice", { callId, playTo: "bridge", text: "Invalid input. Goodbye." });
+        await api.post("/hangup", { callId });
+      }
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.listen(5000, () => {
+  console.log("Webhook server running on :5000");
+});
+```
+
+### cURL test flow (quick)
+
+```bash
+# 1) Place call with AMD + webhook
+curl -X POST "http://72.60.206.114:3000/makecall" \
+  -H "Authorization: Bearer ak_live_123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "number": "14155550100",
+    "webhookUrl": "https://your-domain.com/webhooks/kaphila",
+    "useAmd": true,
+    "ringTimeout": 30
+  }'
+
+# 2) Your webhook receives call.answered with amd.status = HUMAN or MACHINE
+# 3) HUMAN -> POST /gather ; MACHINE -> POST /voice (voicemail drop)
+```
+
+### AMD decision map
+
+| `amd.status` | Recommended action |
+|---|---|
+| `HUMAN` | Start IVR menu with `/gather` |
+| `MACHINE` | Play voicemail message with `/voice`, then optionally `/hangup` |
+| `UNKNOWN` / `NOAMD` | Retry short IVR prompt or send fallback message |
+
 ---
 
 ## 11) Best Practices & Security
 
-1. Store secrets in environment vAPIables; never hardcode API keys.
+1. Store secrets in environment variables; never hardcode API keys.
 2. Rotate API keys regularly.
 3. Validate phone numbers in E.164 format before submission.
 4. Enforce webhook signature verification on receiver side.
